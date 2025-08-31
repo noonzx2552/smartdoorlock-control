@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SmartHome — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <!-- Ambient orbs -->
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="brand">🏠 SmartHome</div>
+    <div class="actions">
+      <span class="status-pill">สถานะประตู: <strong id="doorStatus">-</strong></span>
+      <span class="status-pill">สวัสดี, <strong id="hello">-</strong></span>
+      <button id="btnLogout" class="btn danger">ออกจากระบบ</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Quick -->
+    <section class="panel quick-panel">
+  <div class="quick-head">
+    <div class="quick-title">
+      <span class="spark">⚡</span>
+      <div>
+        <h2 class="title">สั่งงานด่วน</h2>
+        <p class="subtitle">สลับล็อก/ปลดล็อกได้ทันที • ช็อตคัต <span class="kbd">L</span></p>
+      </div>
+    </div>
+
+    <div class="quick-actions-right">
+      <div class="status-chip">
+        สถานะประตู: <strong id="doorStatusLarge">-</strong>
+        <span class="dot" aria-hidden="true"></span>
+      </div>
+      <button class="btn ghost small" id="btnRefreshLock" aria-label="รีเฟรชสถานะ">
+        🔄 รีเฟรช
+      </button>
+    </div>
+  </div>
+
+  <div class="quick-grid">
+    <!-- ปุ่มหลัก -->
+    <button id="btnDoor" class="door-hero is-unlocked" aria-live="polite">
+      <div class="door-hero__icon" aria-hidden="true">
+        <span class="lock">🔓</span>
+      </div>
+      <div class="door-hero__text">
+        <div class="door-hero__label">
+          <span class="state">ปลดล็อกอยู่</span>
+          <span class="sep">—</span>
+          <span class="hint">แตะเพื่อล็อก</span>
+        </div>
+        <div class="door-hero__meta">
+          <span class="kbd">L</span> เพื่อสลับอย่างรวดเร็ว
+        </div>
+      </div>
+      <span class="door-hero__shine" aria-hidden="true"></span>
+    </button>
+
+    <!-- การตั้งค่าเร็ว (เสริมความคุมความเสี่ยง/ความรู้สึกมั่นใจ) -->
+    <div class="quick-side">
+      <div class="card-row">
+        <div class="mini-card">
+          <div class="mini-card__head">โหมดความปลอดภัย</div>
+          <div class="mini-card__body">
+            <label class="switch-wrap">
+              <input type="checkbox" id="safeMode" />
+              <span class="switch"></span>
+              <span class="switch-label">ยืนยันก่อนสั่งงาน</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="mini-card">
+          <div class="mini-card__head">คีย์ลัด</div>
+          <div class="mini-card__body kbd-list">
+            <span class="kbd">L</span><span class="kbd-desc">สลับล็อก</span>
+            <span class="kbd">R</span><span class="kbd-desc">รีเฟรช</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="note small">
+        เคล็ดลับ: เปิด “โหมดความปลอดภัย” เพื่อให้มีป็อปอัปยืนยันก่อนสั่งงานจริง
+      </div>
+    </div>
+  </div>
+</section>
+
+
+    <!-- OTP & Camera -->
+    <section class="grid">
+      <!-- OTP PANEL -->
+      <article class="panel otp-panel">
+  <div class="panel-head">
+    <h2>📲 OTP สำหรับเข้าชั่วคราว</h2>
+  </div>
+
+  <div class="row gap">
+    <label class="field">
+      <span class="label">อายุ (นาที)</span>
+      <input id="otpMinutes" type="number" min="1" value="10"/>
+    </label>
+    <label class="field">
+      <span class="label">จำนวนครั้ง</span>
+      <input id="otpUses" type="number" min="1" value="1"/>
+    </label>
+    <label class="field" style="min-width:240px">
+      <span class="label">หมายเหตุ/คอมเมนต์</span>
+      <input id="otpComment" placeholder="เช่น แม่บ้านเข้าทำความสะอาด 14:00 น.">
+    </label>
+  <label class="field">
+    <span class="label">&nbsp;</span> <!-- space เปล่า -->
+    <button id="btnGenOtp" class="btn ok">สร้าง OTP</button>
+  </label>
+  </div>
+
+  <div class="otp-scroll">
+    <!-- ถ้าไม่มี OTP ให้โชว์กล่องนี้ -->
+    <div id="otpList" class="otp-list">
+      <div class="otp-empty">ยังไม่มี OTP ที่ใช้งาน</div>
+    </div>
+
+    <hr class="hr-soft">
+
+    <div class="panel-head between">
+      <h3 style="margin:0">🕘 ประวัติ OTP</h3>
+      <button id="btnClearOtpHistory" class="btn small ghost">เคลียร์ประวัติ</button>
+    </div>
+    <div id="otpHistory" class="otp-list">
+      <div class="otp-empty">ยังไม่มีประวัติ OTP</div>
+    </div>
+  </div>
+</article>
+
+
+      <!-- CAMERA PANEL -->
+      <article class="panel cam-panel">
+        <div class="panel-head between">
+          <h2>🎥 กล้องหน้าประตู (Live)</h2>
+          <div class="row">
+            <button id="btnStartCam" class="btn ghost small">เริ่มดู</button>
+            <button id="btnStopCam" class="btn ghost small">หยุด</button>
+            <button id="btnSnapshot" class="btn warn small">แคปภาพ</button>
+          </div>
+        </div>
+        <div class="camera" id="camWrap">
+          <img id="camFeed" alt="Door Camera" src="">
+        </div>
+        <div class="row">
+          <a id="snapshotLink" class="link small" download="snapshot.jpg"></a>
+        </div>
+        <p class="muted small">* ถ้า RTSP ใช้ไม่ได้บนเบราว์เซอร์ แนะนำให้แบ็กเอนด์แปลงเป็น MJPEG หรือ HLS</p>
+      </article>
+    </section>
+
+    <!-- LOGS -->
+    <section class="panel">
+      <div class="panel-head"><h2>📜 ประวัติการใช้งาน</h2></div>
+      <div class="table-wrap">
+        <table id="logTable">
+          <thead>
+            <tr><th>เวลา</th><th>ผู้กระทำ</th><th>การกระทำ</th><th>รายละเอียด</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- BIOMETRICS -->
+    <section class="grid">
+      <article class="panel">
+        <div class="panel-head"><h2>🖐️ จัดการลายนิ้วมือ</h2></div>
+        <div class="row gap">
+          <input id="fpUser" class="input" placeholder="ชื่อผู้ใช้">
+          <select id="fpFinger" class="input">
+            <option>Thumb</option><option>Index</option><option>Middle</option><option>Ring</option><option>Pinky</option>
+          </select>
+          <button id="btnEnrollFp" class="btn ok">ลงทะเบียน</button>
+        </div>
+        <div id="fpList" class="list"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head"><h2>🙂 จัดการใบหน้า</h2></div>
+        <div class="row gap">
+          <input id="faceUser" class="input" placeholder="ชื่อผู้ใช้">
+          <input id="faceFile" class="input" type="file" accept="image/*">
+          <button id="btnEnrollFace" class="btn ok">ลงทะเบียน</button>
+        </div>
+        <div id="faceList" class="list"></div>
+      </article>
+    </section>
+  </main>
+
+  <div id="toastHost" class="toast-host" aria-live="polite"></div>
+<!-- Confirm Modal -->
+<div id="confirmModal" class="modal hidden" aria-hidden="true">
+  <div class="modal__backdrop"></div>
+  <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="modal__head">
+      <div class="modal__icon">🔐</div>
+      <h3 id="confirmTitle" class="modal__title">ยืนยันการสั่งงาน</h3>
+    </div>
+    <p id="confirmMessage" class="modal__msg">คุณต้องการดำเนินการหรือไม่</p>
+    <div class="modal__actions">
+      <button id="confirmCancel" class="btn ghost">ยกเลิก</button>
+      <button id="confirmOk" class="btn danger">ยืนยัน</button>
+    </div>
+  </div>
+</div>
+
+  <!-- JS ของคุณ -->
+  <script type="module" src="shared.js"></script>
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>

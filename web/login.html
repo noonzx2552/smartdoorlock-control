@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SmartHome — Login</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="orb o1"></div><div class="orb o2"></div>
+
+
+<section class="login-wrap">
+<div class="card">
+<div class="title">เข้าสู่ระบบ SmartHome</div>
+<div class="subtitle">ล็อกอินเพื่อควบคุมประตู อุปกรณ์ และกล้องแบบเรียลไทม์</div>
+<form id="loginForm" novalidate>
+<div class="input"><input id="username" placeholder="username" required></div>
+<div class="input"><input id="password" type="password" placeholder="password" required minlength="6"></div>
+<button class="btn" id="btnLogin" type="submit">เข้าสู่ระบบ</button>
+</form>
+</div>
+</section>
+
+
+<script type="module" src="shared.js"></script>
+<script type="module" src="login.js"></script>
+</body>
+</html>
