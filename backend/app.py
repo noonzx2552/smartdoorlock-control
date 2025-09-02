@@ -1,15 +1,16 @@
 # app.py
 # uvicorn app:app --reload --host 0.0.0.0 --port 8000
-# pip install "Pillow>=10" passlib[bcrypt] python-multipart
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse, Response, RedirectResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from passlib.context import CryptContext
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta, timezone
-import secrets, uuid, io, random
+from os import getenv
+import os, secrets, uuid, io, random
 
 # ---------- Camera demo (optional) ----------
 try:
@@ -23,7 +24,7 @@ app = FastAPI(title="SmartHome API", version="3.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # จำกัด origin ตอนขึ้นโปรดักชัน
+    allow_origins=["*"],   # โปรดจำกัด origin ตอนขึ้นโปรดักชัน
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -35,7 +36,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 _users_db: Dict[str, str] = {
     "smarthome-user": pwd_context.hash("password123"),
     "admin": pwd_context.hash("admin"),
-    "kasidid" : pwd_context.hash("mark")
+    "kasidid": pwd_context.hash("mark"),
 }
 
 class LoginRequest(BaseModel):
@@ -79,10 +80,11 @@ def user_profile(username: str):
 STATE = {"door_locked": True}
 LOGS: List[Dict] = []
 
-# OTP: แยก active (dict) และ history (list)
+# OTP state
 OTPS: Dict[str, Dict] = {}
 OTP_HISTORY: List[Dict] = []
 
+# Biometric demo
 FINGERPRINTS: Dict[str, Dict] = {}
 FACES: Dict[str, Dict] = {}
 
@@ -123,13 +125,11 @@ class OTPUseRequest(BaseModel):
     code: str
 
 def _push_history(item: Dict):
-    """append snapshot ลงประวัติ"""
     OTP_HISTORY.append(item.copy())
     if len(OTP_HISTORY) > 1000:
         del OTP_HISTORY[:len(OTP_HISTORY)-1000]
 
 def _cleanup_otps():
-    """ย้ายรายการที่หมดอายุ/ใช้ครบออกจาก active และบันทึกลงประวัติ"""
     now = datetime.now(timezone.utc)
     for code in list(OTPS.keys()):
         o = OTPS[code]
@@ -139,6 +139,44 @@ def _cleanup_otps():
             o["status"] = "expired"
             _push_history(o)
             del OTPS[code]
+def _consume_otp(code: str):
+    """
+    ใช้ OTP 1 ครั้ง:
+    - สำเร็จ: คืน (True, remaining_after, item_snapshot)
+    - ไม่สำเร็จ: คืน (False, reason, None)
+      reason: "not_found_or_expired" | "no_remaining"
+    """
+    _cleanup_otps()
+    o = OTPS.get(code)
+    now = datetime.now(timezone.utc)
+
+    if not o:
+        return (False, "not_found_or_expired", None)
+
+    # เช็คหมดอายุ
+    if datetime.fromisoformat(o["expires_at"]) <= now:
+        o["status"] = "expired"
+        _push_history(o)
+        del OTPS[code]
+        return (False, "not_found_or_expired", None)
+
+    if o["remaining"] <= 0:
+        o["status"] = "expired"
+        _push_history(o)
+        del OTPS[code]
+        return (False, "no_remaining", None)
+
+    # ใช้ 1 ครั้ง
+    o["remaining"] -= 1
+    _push_history(o)  # snapshot หลังใช้
+
+    # ถ้าใช้หมด → ปิดสถานะ & ย้ายไป history แล้วลบจาก active
+    if o["remaining"] <= 0:
+        o["status"] = "expired"
+        _push_history(o)
+        del OTPS[code]
+
+    return (True, o.get("remaining", 0), o)
 
 @app.get("/otp/active")
 def otp_active():
@@ -148,12 +186,10 @@ def otp_active():
 
 @app.get("/otp/history")
 def otp_history(limit: int = 200):
-    """ประวัติ OTP ที่หมดอายุแล้วเท่านั้น (ล่าสุดก่อน)"""
     _cleanup_otps()
     expired_items = [it for it in OTP_HISTORY if it.get("status") == "expired"]
     items = expired_items[::-1][:max(1, min(1000, limit))]
     return {"items": items}
-
 
 @app.post("/otp")
 def otp_create(req: OTPCreateRequest):
@@ -171,13 +207,11 @@ def otp_create(req: OTPCreateRequest):
     }
     OTPS[code] = item
     add_log(req.who or "system", "OTP_CREATE", f"{code} ({req.uses} ครั้ง / {req.minutes} นาที)")
-    # history snapshot แรกเป็น active
     _push_history(item)
     return item
 
 @app.delete("/otp/{code}")
 def otp_revoke(code: str, who: Optional[str] = None):
-    """ยกเลิกก่อนหมดอายุ"""
     _cleanup_otps()
     o = OTPS.pop(code, None)
     if not o:
@@ -195,9 +229,8 @@ def otp_use(req: OTPUseRequest):
         return {"valid": False, "reason": "not_found_or_expired"}
     if o["remaining"] <= 0:
         return {"valid": False, "reason": "no_remaining"}
-    # ใช้ 1 ครั้ง
     o["remaining"] -= 1
-    _push_history(o)  # snapshot หลังใช้
+    _push_history(o)
     if o["remaining"] <= 0:
         o["status"] = "expired"
         _push_history(o)
@@ -278,6 +311,92 @@ def ui_state():
         "faces": list(FACES.values()),
     }
 
+# ---------- PIN Unlock (with default + change) ----------
+class PinVerifyRequest(BaseModel):
+    pin: str = Field(min_length=6, max_length=6)
+
+class PinSetRequest(BaseModel):
+    current_pin: Optional[str] = None   # ถ้ายัง default อนุญาตให้ไม่ส่ง
+    new_pin: str = Field(min_length=6, max_length=6)
+
+DEFAULT_PIN = getenv("SMARTLOCK_DEFAULT_PIN", "123456")  # ตั้งผ่าน ENV ได้
+PIN_IS_DEFAULT = True
+PIN_HASH = pwd_context.hash(DEFAULT_PIN)
+
+def _verify_pin(raw_pin: str) -> bool:
+    p = (raw_pin or "").strip()
+    if len(p) != 6 or not p.isdigit():
+        return False
+    return pwd_context.verify(p, PIN_HASH)
+
+@app.get("/pin/info")
+def pin_info():
+    return {"success": True, "is_default": PIN_IS_DEFAULT, "length": 6}
+
+@app.post("/pin/verify")
+def pin_verify(req: PinVerifyRequest):
+    if _verify_pin(req.pin):
+        add_log("pin", "PIN_VERIFY_OK", "verify only")
+        return {"success": True, "message": "PIN OK"}
+    add_log("pin", "PIN_VERIFY_FAIL", "invalid pin")
+    return {"success": False, "message": "PIN ไม่ถูกต้อง"}
+
+@app.post("/pin/unlock")
+def pin_unlock(req: PinVerifyRequest):
+    # 1) ถ้าเป็น PIN ที่ถูกต้อง → ปลดล็อก
+    if _verify_pin(req.pin):
+        STATE["door_locked"] = False
+        add_log("pin", "UNLOCK", "ปลดล็อกจาก PIN")
+        return {"success": True, "method": "pin", "message": "ประตูปลดล็อกแล้ว", "locked": STATE["door_locked"]}
+
+    # 2) ถ้าไม่ใช่ PIN → ลอง OTP
+    ok, info, item = _consume_otp(req.pin)
+    if ok:
+        STATE["door_locked"] = False
+        remaining = info  # จำนวนครั้งที่เหลือหลังหัก 1
+        add_log("otp", "UNLOCK", f"ปลดล็อกจาก OTP {req.pin} (เหลือ {remaining})")
+        return {
+            "success": True,
+            "method": "otp",
+            "message": f"ปลดล็อกด้วย OTP (เหลือ {remaining} ครั้ง)",
+            "remaining": remaining,
+            "locked": STATE["door_locked"],
+        }
+    else:
+        reason = info
+        if reason == "no_remaining":
+            msg = "OTP นี้ถูกใช้ครบแล้ว"
+        else:
+            msg = "OTP หมดอายุหรือไม่พบ"
+        add_log("otp", "UNLOCK_FAIL", f"{req.pin}: {msg}")
+        return {"success": False, "message": msg}
+
+    # 3) กรณีไม่ใช่ทั้งสองอย่าง (จริงๆ มาถึงนี่ไม่ได้แล้ว)
+
+
+@app.post("/pin/set")
+def pin_set(req: PinSetRequest):
+    global PIN_HASH, PIN_IS_DEFAULT
+    newp = (req.new_pin or "").strip()
+    if not newp.isdigit() or len(newp) != 6:
+        raise HTTPException(400, detail="new_pin ต้องเป็นตัวเลข 6 หลัก")
+
+    if PIN_IS_DEFAULT:
+        # ตั้งครั้งแรก ไม่ต้องใช้ current_pin
+        PIN_HASH = pwd_context.hash(newp)
+        PIN_IS_DEFAULT = False
+        add_log("pin", "PIN_SET", "set from default")
+        return {"success": True, "message": "ตั้ง PIN ใหม่สำเร็จ (จากค่าเริ่มต้น)"}
+    else:
+        cur = (req.current_pin or "").strip()
+        if not _verify_pin(cur):
+            raise HTTPException(401, detail="current_pin ไม่ถูกต้อง")
+        PIN_HASH = pwd_context.hash(newp)
+        PIN_IS_DEFAULT = False
+        add_log("pin", "PIN_SET", "changed")
+        return {"success": True, "message": "เปลี่ยน PIN ใหม่สำเร็จ"}
+
+
 # ---------- Camera demo ----------
 def _make_frame_bytes(text: str = "SmartHome Camera") -> bytes:
     if not PIL_OK:
@@ -317,3 +436,22 @@ def camera_mjpeg():
                    frame + b"\r\n")
             time.sleep(0.1)
     return StreamingResponse(gen(), media_type=f"multipart/x-mixed-replace; boundary={boundary}")
+
+# ---------- Static Web ----------
+# โฟลเดอร์ 'web' ต้องอยู่โฟลเดอร์เดียวกับ app.py
+if not os.path.isdir("web"):
+    os.makedirs("web", exist_ok=True)
+
+app.mount("/web", StaticFiles(directory="web", html=True), name="web")
+
+@app.get("/")
+def root():
+    # ไปที่ /web/ เพื่อเปิดหน้า index.html
+    return RedirectResponse(url="/web/")
+
+@app.get("/favicon.ico")
+def favicon():
+    path = os.path.join("web", "favicon.ico")
+    if os.path.exists(path):
+        return FileResponse(path)
+    return Response(status_code=204)

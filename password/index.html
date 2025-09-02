@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Smart Door Lock - PIN</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{width:100%;height:100%;overflow:hidden;font-family:Poppins,system-ui,sans-serif;background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff}
+    body{display:flex;justify-content:center;align-items:center}
+    .container{width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:20px}
+    h2{margin-bottom:30px;font-size:1.5rem;text-align:center}
+    .pin-display{display:flex;justify-content:center;margin:20px 0 40px;gap:15px}
+    .dot{width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,.3);transition:.3s}
+    .dot.filled{background:#22d3ee}
+    .keypad{display:grid;grid-template-columns:repeat(3,80px);grid-gap:20px;justify-content:center}
+    .btn{width:80px;height:80px;border-radius:50%;background:rgba(255,255,255,.1);font-size:24px;color:#fff;border:none;cursor:pointer;transition:.2s}
+    .btn:hover{background:rgba(255,255,255,.3)}
+    .btn:active{transform:scale(.95)}
+    .btn.special{font-size:18px}
+    @media (max-width:500px){
+      .btn{width:70px;height:70px;font-size:22px}
+      .keypad{grid-gap:15px}
+      h2{font-size:1.2rem}
+    }
+    /* Popup */
+    .popup{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;justify-content:center;align-items:center;z-index:1000}
+    .popup.active{display:flex}
+    .popup-content{background:#1e293b;padding:30px 40px;border-radius:15px;text-align:center;box-shadow:0 5px 15px rgba(0,0,0,.5);animation:pop .25s ease}
+    .popup-content h3{margin-bottom:16px;font-size:1.3rem}
+    .popup-content p{opacity:.9;margin-bottom:18px}
+    .popup-actions{display:flex;gap:10px;justify-content:center}
+    .popup-actions button{padding:10px 18px;font-size:1rem;background:#22d3ee;border:none;border-radius:10px;cursor:pointer;color:#0f172a;font-weight:700}
+    .popup.success .popup-content{outline:2px solid #34d399}
+    .popup.error .popup-content{outline:2px solid #ef4444}
+    @keyframes pop{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
+    /* shake เมื่อผิด */
+    .shake{animation:shake .35s}
+    @keyframes shake{
+      10%,90%{transform:translateX(-2px)}
+      20%,80%{transform:translateX(4px)}
+      30%,50%,70%{transform:translateX(-8px)}
+      40%,60%{transform:translateX(8px)}
+    }
+    /* บล็อคหน้าจอเมื่อยังเป็น default PIN */
+    .blocker {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75);
+      display: none; /* จะเปิดด้วย JS ถ้ายัง default */
+      z-index: 1200;
+      color: #fff;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 24px;
+    }
+    .blocker.active { display: flex; }
+    .blocker .box {
+      background: #111827;
+      border: 1px solid #374151;
+      padding: 20px 24px;
+      border-radius: 16px;
+      max-width: 420px;
+    }
+    .blocker .box h3 { margin-bottom: 8px; }
+    .blocker .box p { opacity: .9; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>ใส่รหัส PIN 6 หลัก</h2>
+    <div class="pin-display" id="pinDisplay">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+    <div class="keypad" id="keypad">
+      <button class="btn" onclick="pressNum(1)">1</button>
+      <button class="btn" onclick="pressNum(2)">2</button>
+      <button class="btn" onclick="pressNum(3)">3</button>
+      <button class="btn" onclick="pressNum(4)">4</button>
+      <button class="btn" onclick="pressNum(5)">5</button>
+      <button class="btn" onclick="pressNum(6)">6</button>
+      <button class="btn" onclick="pressNum(7)">7</button>
+      <button class="btn" onclick="pressNum(8)">8</button>
+      <button class="btn" onclick="pressNum(9)">9</button>
+      <button class="btn special" onclick="backspace()">⌫</button>
+      <button class="btn" onclick="pressNum(0)">0</button>
+      <button class="btn special" onclick="submitPin()">✔</button>
+    </div>
+  </div>
+
+  <!-- Popup -->
+  <div class="popup" id="popup">
+    <div class="popup-content">
+      <h3 id="popupTitle">สถานะ</h3>
+      <p id="popupMessage">ข้อความแจ้งเตือน</p>
+      <div class="popup-actions">
+        <button onclick="closePopup()">ตกลง</button>
+      </div>
+    </div>
+  </div>
+<!-- แถบเตือนค่า default -->
+<div id="defaultBanner" style="position:fixed;top:0;left:0;right:0;background:#f59e0b;color:#0f172a;padding:10px 14px;display:none;text-align:center;font-weight:700;z-index:1100">
+  ⚠️ ขณะนี้กำลังใช้ PIN ค่าเริ่มต้น แนะนำให้เปลี่ยน PIN เพื่อความปลอดภัย
+  <button onclick="openChangePin()" style="margin-left:10px;padding:6px 10px;border:none;border-radius:8px;background:#0f172a;color:#fff;cursor:pointer">เปลี่ยน PIN</button>
+</div>
+
+<!-- Modal เปลี่ยน PIN -->
+<div class="popup" id="changePinModal">
+  <div class="popup-content">
+    <h3 id="cpTitle">เปลี่ยน PIN</h3>
+    <p id="cpDesc" style="opacity:.9;margin-bottom:8px">ตั้งค่า PIN ใหม่ (ตัวเลข 6 หลัก)</p>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+      <input id="cpCurrent" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+             placeholder="PIN ปัจจุบัน" style="padding:10px;border-radius:10px;border:none;outline:2px solid #334155;background:#0b1220;color:#fff">
+      <input id="cpNew" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+             placeholder="PIN ใหม่ (6 หลัก)" style="padding:10px;border-radius:10px;border:none;outline:2px solid #334155;background:#0b1220;color:#fff">
+    </div>
+    <div class="popup-actions" style="margin-top:12px">
+      <button onclick="submitChangePin()">บันทึก</button>
+      <button onclick="closeChangePin()">ยกเลิก</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ใช้ host/port เดียวกับที่เสิร์ฟหน้าเว็บ
+  const API = "";
+
+  let pin = "", max=6;
+  const dots = [...document.querySelectorAll(".dot")];
+  const kp = document.getElementById("keypad");
+
+  // popup แจ้งผล (เดิม)
+  const popel = document.getElementById("popup");
+  const pt = document.getElementById("popupTitle") || document.getElementById("pt");
+  const pm = document.getElementById("popupMessage") || document.getElementById("pm");
+
+  // banner default + modal change pin
+  const defaultBanner = document.getElementById("defaultBanner");
+  const changePinModal = document.getElementById("changePinModal");
+  const cpCurrent = document.getElementById("cpCurrent");
+  const cpNew = document.getElementById("cpNew");
+  let isDefault = false;
+
+  function u(){dots.forEach((e,i)=>e.classList.toggle("filled", i < pin.length));}
+  function n(x){if(pin.length<max){pin+=String(x);u();}}
+  function back(){pin = pin.slice(0,-1); u();}
+  function showPopup(type, title, msg){
+    // type: "success" | "error"
+    popel.classList.remove("success","error");
+    popel.classList.add(type);
+    pt.textContent = title;
+    pm.textContent = msg;
+    popel.classList.add("active");
+  }
+  function closePopup(){popel.classList.remove("active");}
+
+  function openChangePin(){
+    // ถ้ายังเป็น default → ไม่ต้องกรอก current
+    // ถ้าไม่ default → ต้องกรอก current
+    cpCurrent.parentElement.style.display = isDefault ? "none" : "flex";
+    changePinModal.classList.add("active");
+  }
+  function closeChangePin(){
+    cpCurrent.value = ""; cpNew.value = "";
+    changePinModal.classList.remove("active");
+  }
+
+  async function fetchPinInfo(){
+    try{
+      const r = await fetch(`${API}/pin/info`);
+      const j = await r.json();
+      if(j.success){
+        isDefault = !!j.is_default;
+        defaultBanner.style.display = isDefault ? "block" : "none";
+      }
+    }catch(e){
+      // เงียบๆ ไปก่อน (ถ้า info พัง ก็ยังปลดล็อกได้)
+    }
+  }
+
+  async function submitChangePin(){
+    const payload = isDefault
+      ? { new_pin: (cpNew.value||"").trim() }
+      : { current_pin: (cpCurrent.value||"").trim(), new_pin: (cpNew.value||"").trim() };
+
+    if(!/^\d{6}$/.test(payload.new_pin)){
+      return showPopup("error", "รูปแบบไม่ถูกต้อง", "PIN ใหม่ต้องเป็นตัวเลข 6 หลัก");
+    }
+    if(!isDefault && !/^\d{6}$/.test(payload.current_pin||"")){
+      return showPopup("error", "รูปแบบไม่ถูกต้อง", "กรุณากรอก PIN ปัจจุบันให้ถูกต้อง");
+    }
+
+    try{
+      const r = await fetch(`${API}/pin/set`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(payload)
+      });
+      const j = await r.json();
+      if(r.ok && j.success){
+        showPopup("success", "สำเร็จ", j.message || "เปลี่ยน PIN เรียบร้อย");
+        isDefault = false;
+        defaultBanner.style.display = "none";
+        closeChangePin();
+      }else{
+        showPopup("error", "ไม่สำเร็จ", j?.detail || j?.message || "เปลี่ยน PIN ไม่สำเร็จ");
+      }
+    }catch(e){
+      showPopup("error", "ระบบขัดข้อง", "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
+    }
+  }
+
+  async function go(){
+    if(pin.length!==max){
+      kp.classList.add("shake"); setTimeout(()=>kp.classList.remove("shake"),400);
+      return showPopup("error","ยังไม่ครบ 6 หลัก","กรุณากรอก PIN ให้ครบ");
+    }
+    try{
+      const r = await fetch(`${API}/pin/unlock`, {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ pin })
+      });
+      const j = await r.json();
+      if(j.success){
+        showPopup("success","✅ ปลดล็อกสำเร็จ","ประตูถูกปลดล็อกแล้ว");
+        pin=""; u();
+      }else{
+        showPopup("error","❌ รหัสผิด", j.message || "ลองใหม่อีกครั้ง");
+        pin=""; u(); kp.classList.add("shake"); setTimeout(()=>kp.classList.remove("shake"),400);
+      }
+    }catch(e){
+      showPopup("error","⚠️ ระบบขัดข้อง","เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
+      pin=""; u();
+    }
+  }
+
+  // กันหน้าเลื่อนบนมือถือ
+  document.addEventListener("touchmove", e=>e.preventDefault(), {passive:false});
+
+  // เริ่มต้น: ดึงสถานะ PIN (default หรือยัง)
+  fetchPinInfo();
+</script>
+
+</body>
+</html>
