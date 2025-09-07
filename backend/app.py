@@ -1,5 +1,6 @@
 # app.py
 # uvicorn app:app --reload --host 0.0.0.0 --port 8000
+#pip install -r requirements.txt
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +12,10 @@ from typing import Dict, List, Optional
 from datetime import datetime, timedelta, timezone
 from os import getenv
 import os, secrets, uuid, io, random
+import threading, requests  # <-- เพิ่ม
+from dotenv import load_dotenv  # <-- เพิ่ม
 
+load_dotenv()
 # ---------- Camera demo (optional) ----------
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -95,6 +99,32 @@ def add_log(who: str, action: str, info: str = ""):
     LOGS.append({"ts": _now_iso(), "who": who, "action": action, "info": info})
     if len(LOGS) > 500:
         del LOGS[:len(LOGS)-500]
+TELEGRAM_BOT_TOKEN = getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = getenv("TELEGRAM_CHAT_ID")
+
+def _tg_enabled() -> bool:
+    return bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
+
+def _send_telegram_message(text: str):
+    """
+    ส่งข้อความไป Telegram แบบไม่บล็อก (background thread)
+    ใช้ HTML ได้ เช่น <b>หนา</b>
+    """
+    if not _tg_enabled():
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+    def _post():
+        try:
+            requests.post(url, json=payload, timeout=6)
+        except Exception:
+            pass
+    threading.Thread(target=_post, daemon=True).start()
 
 # ---------- Door Lock ----------
 class LockRequest(BaseModel):
@@ -105,14 +135,31 @@ class LockRequest(BaseModel):
 def lock_status():
     return {"locked": STATE["door_locked"]}
 
+def _now_hms():
+    # คืนค่าเวลาแบบ HH:mm:ss (UTC)
+    return datetime.now(timezone.utc).strftime("%H:%M:%S")
+
 @app.post("/lock")
 def lock_control(req: LockRequest):
     action = req.action.lower().strip()
     if action not in ("lock", "unlock"):
         raise HTTPException(400, detail="action ต้องเป็น lock หรือ unlock")
+
     STATE["door_locked"] = (action == "lock")
     add_log(req.who or "system", action.upper(), "สั่งจาก API")
+
+    if action == "unlock":
+        _send_telegram_message(
+            f"🔓 <b>Door Unlocked</b>\nMethod: API\nBy: {req.who or 'system'}\nTime: {_now_hms()}"
+        )
+
+    if action == "lock":
+        _send_telegram_message(
+            f"🔐 <b>Door Locked</b>\nBy: {req.who or 'system'}\nTime: {_now_hms()}"
+        )
+
     return {"ok": True, "locked": STATE["door_locked"]}
+
 
 # ---------- OTP ----------
 class OTPCreateRequest(BaseModel):
@@ -347,6 +394,9 @@ def pin_unlock(req: PinVerifyRequest):
     if _verify_pin(req.pin):
         STATE["door_locked"] = False
         add_log("pin", "UNLOCK", "ปลดล็อกจาก PIN")
+        _send_telegram_message(
+            f"🔓 <b>Door Unlocked</b>\nMethod: PIN\nTime: {_now_iso()}"
+        )
         return {"success": True, "method": "pin", "message": "ประตูปลดล็อกแล้ว", "locked": STATE["door_locked"]}
 
     # 2) ถ้าไม่ใช่ PIN → ลอง OTP
@@ -355,6 +405,9 @@ def pin_unlock(req: PinVerifyRequest):
         STATE["door_locked"] = False
         remaining = info  # จำนวนครั้งที่เหลือหลังหัก 1
         add_log("otp", "UNLOCK", f"ปลดล็อกจาก OTP {req.pin} (เหลือ {remaining})")
+        _send_telegram_message(
+            f"🔓 <b>Door Unlocked</b>\nMethod: OTP\nRemaining: {remaining}\nTime: {_now_iso()}"
+        )
         return {
             "success": True,
             "method": "otp",
@@ -369,9 +422,11 @@ def pin_unlock(req: PinVerifyRequest):
         else:
             msg = "OTP หมดอายุหรือไม่พบ"
         add_log("otp", "UNLOCK_FAIL", f"{req.pin}: {msg}")
+        _send_telegram_message(
+            f"❌ <b>Unlock Attempt Failed</b>\nReason: {msg}\nTime: {_now_iso()}"
+        )
         return {"success": False, "message": msg}
 
-    # 3) กรณีไม่ใช่ทั้งสองอย่าง (จริงๆ มาถึงนี่ไม่ได้แล้ว)
 
 
 @app.post("/pin/set")
