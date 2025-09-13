@@ -25,11 +25,18 @@ except Exception:
 
 # ---------- App ----------
 app = FastAPI(title="SmartHome API", version="3.0.0")
-
+origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5500", 
+    "http://192.168.56.1:8000"
+    "http://192.168.56.1:8000/web/login.html"
+    # ใส่โดเมนจริงของเว็บคุณเพิ่มได้ เช่น "https://yourdomain.com"
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # โปรดจำกัด origin ตอนขึ้นโปรดักชัน
-    allow_credentials=True,
+    allow_origins=origins,
+    allow_credentials=True,   # ถ้าไม่ต้องใช้คุกกี้/credentials จะตั้ง False ก็ได้
     allow_methods=["*"],
     allow_headers=["*"],
 )

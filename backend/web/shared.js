@@ -1,14 +1,28 @@
 // Base config & helpers shared by both pages
-export const API = 'http://localhost:8000';
+export const API = ''; 
+
 
 
 export function fmt(ts){ return new Date(ts).toLocaleString(); }
 
 
-export async function safeFetch(url, opts){
-try{ const r = await fetch(url, opts); if(!r.ok) throw new Error('HTTP '+r.status); return await r.json(); }
-catch(e){ return { __error: true, message: e.message }; }
+export async function safeFetch(url, opts = {}) {
+  try {
+    const r = await fetch(url, {
+      headers: { Accept: "application/json", ...(opts.headers || {}) },
+      ...opts,
+    });
+    const ct = r.headers.get("content-type") || "";
+    const data = ct.includes("application/json") ? await r.json() : await r.text();
+    if (!r.ok) {
+      return { __error: true, status: r.status, message: (data?.message || data || `HTTP ${r.status}`) };
+    }
+    return data;
+  } catch (e) {
+    return { __error: true, message: String(e) };
+  }
 }
+
 
 
 export function setUser(user){ sessionStorage.setItem('user', JSON.stringify(user)); }
