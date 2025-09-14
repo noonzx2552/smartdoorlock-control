@@ -14,8 +14,10 @@ from os import getenv
 import os, secrets, uuid, io, random
 import threading, requests  # <-- เพิ่ม
 from dotenv import load_dotenv  # <-- เพิ่ม
+import subprocess
 
 load_dotenv()
+RPI_CAMERA_BASE = getenv("RPI_CAMERA_BASE", "http://127.0.0.1:8080")
 # ---------- Camera demo (optional) ----------
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -29,7 +31,7 @@ origins = [
     "http://localhost:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5500", 
-    "http://192.168.56.1:8000"
+    "http://192.168.56.1:8000",
     "http://192.168.56.1:8000/web/login.html"
     # ใส่โดเมนจริงของเว็บคุณเพิ่มได้ เช่น "https://yourdomain.com"
 ]
@@ -482,22 +484,22 @@ def _make_frame_bytes(text: str = "SmartHome Camera") -> bytes:
 
 @app.get("/camera/snapshot")
 def camera_snapshot():
-    frame = _make_frame_bytes("Snapshot")
-    return Response(content=frame, media_type="image/jpeg")
+    try:
+        r = requests.get(f"{RPI_CAMERA_BASE}/?action=snapshot", timeout=5)
+        r.raise_for_status()
+        return Response(content=r.content, media_type="image/jpeg")
+    except Exception as e:
+        raise HTTPException(502, detail=f"Snapshot upstream error: {e}")
 
 @app.get("/camera/mjpeg")
 def camera_mjpeg():
-    boundary = "frame"
-    def gen():
-        import time
-        while True:
-            frame = _make_frame_bytes("Live MJPEG")
-            yield (b"--" + boundary.encode() + b"\r\n"
-                   b"Content-Type: image/jpeg\r\n"
-                   b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n" +
-                   frame + b"\r\n")
-            time.sleep(0.1)
-    return StreamingResponse(gen(), media_type=f"multipart/x-mixed-replace; boundary={boundary}")
+    try:
+        upstream = requests.get(f"{RPI_CAMERA_BASE}/?action=stream", stream=True, timeout=10)
+        upstream.raise_for_status()
+        ctype = upstream.headers.get("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+        return StreamingResponse(upstream.iter_content(chunk_size=1024), media_type=ctype)
+    except Exception as e:
+        raise HTTPException(502, detail=f"MJPEG upstream error: {e}")
 
 # ---------- Static Web ----------
 # โฟลเดอร์ 'web' ต้องอยู่โฟลเดอร์เดียวกับ app.py
