@@ -4,6 +4,8 @@
 
 /* Theme */
 :root{
+  --panelTopOffset: 140px;      
+  --vhPanel: calc(100dvh - var(--panelTopOffset));
   --bg1:#0b1022; --bg2:#1a2142; --txt:#eef2ff; --muted:#a8b0c7;
   --brandA:#22d3ee; --brandB:#6366f1; --accent:#10b981; --danger:#ef4444; --warn:#f59e0b;
   --border:rgba(255,255,255,.15);
@@ -79,12 +81,6 @@ body::after{
 .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:18px}
 .grid>.panel{grid-column:span 12}
 
-/* OTP wider / camera narrower */
-@media (min-width: 980px){
-  .grid > .otp-panel { grid-column: span 7; }
-  .grid > .cam-panel { grid-column: span 5; }
-}
-
 /* Buttons */
 .btn{
   display:inline-flex;align-items:center;justify-content:center;gap:8px;
@@ -114,12 +110,6 @@ body::after{
 .field{display:grid;gap:6px}
 .label{font-size:12px;color:var(--muted)}
 
-/* Camera 16:9 */
-.camera{
-  position: relative; border:1px solid var(--border); border-radius:16px;
-  overflow:hidden; background:#0b0e1a; aspect-ratio:16/9; width:100%; height:auto;
-}
-.camera img, .camera video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
 
 /* Lists & Tables */
 .list{display:grid;gap:10px;margin-top:12px}
@@ -179,10 +169,6 @@ body::after{
 /* ===== Scroll behavior: OTP panel doesn’t stretch page ===== */
 .grid{ align-items:start; }
 /* ===== OTP Panel ===== */
-.otp-panel{
-  display:flex; flex-direction:column; overflow:hidden;
-  min-height:420px; max-height:420px;
-}
 
 .otp-panel > .row{ flex:0 0 auto; margin-bottom:14px; }
 
@@ -192,7 +178,11 @@ body::after{
   -webkit-overflow-scrolling:touch;
   display:flex; flex-direction:column; gap:16px; /* ✅ ช่องว่างระหว่าง otpList / history */
 }
-
+.history-panel .table-wrap{
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
 /* otp list container */
 .otp-list{
   display:grid; gap:12px;
@@ -217,13 +207,6 @@ body::after{
 }
 
 
-/* Camera panel height kept similar (optional) */
-.cam-panel{
-  max-height: calc(100vh - 160px);
-  min-height: 420px;
-  overflow:hidden; display:flex; flex-direction:column;
-}
-.cam-panel .camera{ flex:0 0 auto; }
 
 /* Scrollbars */
 .otp-panel .otp-scroll::-webkit-scrollbar,
@@ -231,12 +214,6 @@ body::after{
 .otp-panel .otp-scroll::-webkit-scrollbar-thumb,
 .table-wrap::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.18); border-radius:999px }
 
-/* Mobile tweaks */
-@media (max-width: 980px){
-  .panel { padding:16px }
-  .otp-panel, .cam-panel{ max-height: 420px }
-  .table-wrap{ max-height:34vh }
-}
 /* ---------- QUICK PANEL (สั่งงานด่วน) ---------- */
 .quick-panel { display:grid; gap:14px; }
 
@@ -393,9 +370,10 @@ body::after{
 .modal__actions .btn{ min-width:110px }
 /* กล่อง OTP Panel และ Camera Panel ให้สูงเท่ากัน */
 .otp-panel,
-.cam-panel {
-  min-height: 570px;
-  max-height: 570px; /* สูงสุดไม่เกินกล้อง */
+.history-panel   /* ← ตั้ง class ให้ panel ประวัติการใช้งาน */
+{
+  min-height: var(--vhPanel);
+  max-height: var(--vhPanel);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -414,3 +392,38 @@ body::after{
   display: grid;
   gap: 12px;
 }
+/* ====== Full-height Panels (OTP & History & Camera) ====== */
+/* ระยะเผื่อส่วนหัว/ขอบบน (ปรับได้ให้พอดีกับ topbar ของจริง) */
+:root{
+  --panelTopOffset: 140px;
+  --vhPanel: calc(100dvh - var(--panelTopOffset));
+}
+
+/* ให้ทั้งสามพาเนลสูงเท่ากัน เต็มจอ (หักส่วนหัว) */
+.otp-panel,
+.history-panel{
+  min-height: var(--vhPanel);
+  max-height: var(--vhPanel);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;       /* ✅ เลื่อนเฉพาะภายใน ไม่ดันทั้งหน้า */
+}
+
+/* ภายใน OTP ให้เลื่อนเฉพาะรายการ */
+.otp-panel .otp-scroll{
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ภายใน HISTORY ให้เลื่อนเฉพาะตาราง */
+.history-panel .table-wrap{
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* กัน grid ดันยืด */
+.grid{ align-items: start; }
